@@ -18,10 +18,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS configuration
 # -----------------------
 allowed_origins = [
-    "http://localhost",
-    "http://localhost:8000",
-    "https://your-frontend-domain.com",
-      "https://ai-text-humanizer-aptm.onrender.com"  # replace with your frontend domain
+"*"  # replace with your frontend domain
 ]
 
 app.add_middleware(
