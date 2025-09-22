@@ -4,8 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import json
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Conversantech Humanizer AI API Wrapper")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # -----------------------
 # CORS configuration
@@ -72,7 +79,8 @@ HEADERS = {
 # Join Queue Endpoint
 # -----------------------
 @app.post("/join_queue")
-def join_queue(request_body: HumanizerRequest, request: Request):
+@limiter.limit("5/minute")
+def join_queue(request: Request, request_body: HumanizerRequest):
     check_ip(request)
     join_url = "https://conversantech-humanizer-ai.hf.space/gradio_api/queue/join?__theme=system"
     
@@ -87,7 +95,8 @@ def join_queue(request_body: HumanizerRequest, request: Request):
 # Queue Data Endpoint
 # -----------------------
 @app.get("/queue_data/{session_hash}")
-def get_queue_data(session_hash: str, request: Request):
+@limiter.limit("5/minute")
+def get_queue_data(request: Request, session_hash: str):
     check_ip(request)
     data_url = f"https://conversantech-humanizer-ai.hf.space/gradio_api/queue/data?session_hash={session_hash}"
     
@@ -107,6 +116,7 @@ def get_queue_data(session_hash: str, request: Request):
 # Health Check Endpoint
 # -----------------------
 @app.get("/health")
+@limiter.limit("5/minute")
 def health_check(request: Request):
     check_ip(request)
     return {"status": "ok", "message": "API wrapper is running"}
