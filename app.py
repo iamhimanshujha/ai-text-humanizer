@@ -40,7 +40,7 @@ app.add_middleware(
 #         raise HTTPException(status_code=403, detail=f"Forbidden: Your IP ({client_ip}) is not allowed")
 
 # -----------------------
-# Request model
+# Request models
 # -----------------------
 class HumanizerRequest(BaseModel):
     data: list
@@ -48,6 +48,9 @@ class HumanizerRequest(BaseModel):
     fn_index: int
     trigger_id: int
     session_hash: str
+
+class ZeroGPTRequest(BaseModel):
+    input_text: str
 
 # -----------------------
 # Common headers for Hugging Face API
@@ -71,6 +74,29 @@ HEADERS = {
     "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36",
     "x-zerogpu-uuid": "7g4FAwbU0BKeEo5dKGQNI"
 }
+
+# -----------------------
+# ZeroGPT API headers
+# -----------------------
+ZEROGPT_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en-IN;q=0.9,en;q=0.8,hi-IN;q=0.7,hi;q=0.6",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Content-Type": "application/json",
+    "Origin": "https://www.zerogpt.com",
+    "Pragma": "no-cache",
+    "Referer": "https://www.zerogpt.com/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36",
+    "sec-ch-ua": '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"'
+}
+
+ZEROGPT_COOKIES = "_gcl_au=1.1.2093563194.1758400573; _ga=GA1.1.1999342046.1758400574; _cc_id=800cdf58a21ce1d32f606f675d308da7; panoramaId_expiry=1759005379034; panoramaId=4e60b9d5ba4669be437dbecdcd6816d53938ef3a5a3af40137b6cffdf92e8b81; panoramaIdType=panoIndiv; _ga_0YHYR2F422=GS2.1.s1758478655$o2$g1$t1758480101$j60$l0$h1523464472; cto_bundle=wsfOll96b3czYjZ1bmlCeGVRZVdtUHJwck92Z3V1ZlA4ZUtnaFRPb3pmSHRJMnl1eng3eVM2OFJjUmJlVSUyQnlJZGtLNjN3dXU1bVAzc1B5SGJQRDlGeUJzcHFMcTlENG9YMDNOV0t5Z1psZjlPTms0NGV0UThscmdxdSUyRnNBSCUyQndhU09uWlp0dFNnNmhKVXM3cnZGZEdZVzE4TzMwbEtWb0Exa1M5WWhYU252OUtPaWJSdFRaRkg0WG55JTJCdjlXVXRHTFZESklFSDBCclVyNlBSNXRtZEFEYkdiTnclM0QlM0Q; __gads=ID=49ee81efad37e4f8:T=1758400578:RT=1758510250:S=ALNI_MY8DU4pQxuAD19WKqwADfxsEc-PJg; __gpi=UID=00001199123c0952:T=1758400578:RT=1758510250:S=ALNI_MYbsjWHrE2MAdfek86AbxGZXeUgyQ; __eoi=ID=8aba0271d780a3b2:T=1758400578:RT=1758510250:S=AA-AfjaEyBOp50t1G2nmfHwNTvrT; __qca=I0-1468342235-1758510448460"
 
 # -----------------------
 # Join Queue Endpoint
@@ -108,6 +134,30 @@ def get_queue_data(request: Request, session_hash: str):
         return {"stream_data": data_lines}
     except requests.RequestException as e:
         return {"error": "Failed to fetch queue data", "details": str(e)}
+
+# -----------------------
+# ZeroGPT Test Endpoint
+# -----------------------
+@app.post("/zerogpt-test")
+@limiter.limit("20/minute")
+def zerogpt_test(request: Request, request_body: ZeroGPTRequest):
+    zerogpt_url = "https://api.zerogpt.com/api/detect/detectText"
+    
+    # Prepare headers with cookies
+    headers_with_cookies = ZEROGPT_HEADERS.copy()
+    headers_with_cookies["Cookie"] = ZEROGPT_COOKIES
+    
+    try:
+        response = requests.post(
+            zerogpt_url, 
+            headers=headers_with_cookies, 
+            data=json.dumps({"input_text": request_body.input_text}), 
+            timeout=30
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        return {"error": "Failed to detect text with ZeroGPT", "details": str(e)}
 
 # -----------------------
 # Health Check Endpoint
