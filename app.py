@@ -32,12 +32,12 @@ app.add_middleware(
 # -----------------------
 # Allowed client IPs
 # -----------------------
-ALLOWED_IPS = ["123.45.67.89", "111.222.333.444"]  # replace with your allowed IPs
+# ALLOWED_IPS = ["123.45.67.89", "111.222.333.444"]  # replace with your allowed IPs
 
-def check_ip(request: Request):
-    client_ip = request.client.host
-    if client_ip not in ALLOWED_IPS:
-        raise HTTPException(status_code=403, detail=f"Forbidden: Your IP ({client_ip}) is not allowed")
+# def check_ip(request: Request):
+#     client_ip = request.client.host
+#     if client_ip not in ALLOWED_IPS:
+#         raise HTTPException(status_code=403, detail=f"Forbidden: Your IP ({client_ip}) is not allowed")
 
 # -----------------------
 # Request model
@@ -78,7 +78,7 @@ HEADERS = {
 @app.post("/join_queue")
 @limiter.limit("5/minute")
 def join_queue(request: Request, request_body: HumanizerRequest):
-    check_ip(request)
+    # check_ip(request)
     join_url = "https://conversantech-humanizer-ai.hf.space/gradio_api/queue/join?__theme=system"
     
     try:
@@ -94,7 +94,7 @@ def join_queue(request: Request, request_body: HumanizerRequest):
 @app.get("/queue_data/{session_hash}")
 @limiter.limit("5/minute")
 def get_queue_data(request: Request, session_hash: str):
-    check_ip(request)
+    # check_ip(request)
     data_url = f"https://conversantech-humanizer-ai.hf.space/gradio_api/queue/data?session_hash={session_hash}"
     
     try:
@@ -115,5 +115,5 @@ def get_queue_data(request: Request, session_hash: str):
 @app.get("/health")
 @limiter.limit("5/minute")
 def health_check(request: Request):
-    check_ip(request)
+    # check_ip(request)
     return {"status": "ok", "message": "API wrapper is running"}
