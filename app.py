@@ -10,7 +10,10 @@ from slowapi.errors import RateLimitExceeded
 
 # Minimal IP extraction function
 def get_ip(request: Request):
-    return request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
+    print("Request headers:", request.headers)
+    ip = request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
+    print("Resolved IP:", ip)
+    return ip
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_ip)
