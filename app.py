@@ -134,7 +134,7 @@ def get_queue_data(request: Request, session_hash: str):
 # ZeroGPT Test Endpoint
 # -----------------------
 @app.post("/zerogpt-test")
-@limiter.limit("20/minute")
+@limiter.limit("5/minute")
 def zerogpt_test(request: Request, request_body: ZeroGPTRequest):
     zerogpt_url = "https://api.zerogpt.com/api/detect/detectText"
     
