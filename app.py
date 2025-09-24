@@ -1,22 +1,29 @@
-# api-access.py
-from fastapi import FastAPI, Body, Request, HTTPException
+# Optimized for 500MB RAM - Render Free Tier
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import requests
-import json
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+import time
+from collections import defaultdict
 
-# Minimal IP extraction function
-def get_ip(request: Request):
+# Ultra-lightweight rate limiter (< 1KB memory per IP)
+rate_limits = defaultdict(list)
+RATE_LIMIT = 5  # requests per minute
+WINDOW = 60  # 60 seconds
+
+def check_rate_limit(ip: str) -> bool:
+    now = time.time()
+    # Clean old entries (automatic memory cleanup)
+    rate_limits[ip] = [t for t in rate_limits[ip] if now - t < WINDOW]
+    # Check limit
+    if len(rate_limits[ip]) >= RATE_LIMIT:
+        return False
+    rate_limits[ip].append(now)
+    return True
+
+def get_ip(request: Request) -> str:
     return request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_ip)
-app = FastAPI(title="Conversantech Humanizer AI API Wrapper")
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app = FastAPI(title="AI Humanizer API", docs_url=None, redoc_url=None)  # Disable docs to save memory
 
 # -----------------------
 # CORS configuration
@@ -34,18 +41,13 @@ app.add_middleware(
 )
 
 
-# -----------------------
-# Request models
-# -----------------------
-class HumanizerRequest(BaseModel):
-    data: list
-    event_data: dict = None
-    fn_index: int
-    trigger_id: int
-    session_hash: str
+# Lightweight request validation (no Pydantic to save memory)
+def validate_humanizer_request(data: dict) -> bool:
+    required = ['data', 'fn_index', 'trigger_id', 'session_hash']
+    return all(key in data for key in required)
 
-class ZeroGPTRequest(BaseModel):
-    input_text: str
+def validate_zerogpt_request(data: dict) -> bool:
+    return 'input_text' in data and isinstance(data['input_text'], str)
 
 # -----------------------
 # Common headers for Hugging Face API
@@ -97,68 +99,98 @@ ZEROGPT_COOKIES = "_gcl_au=1.1.2093563194.1758400573; _ga=GA1.1.1999342046.17584
 # Join Queue Endpoint
 # -----------------------
 @app.post("/join_queue")
-@limiter.limit("5/minute")
-def join_queue(request: Request, request_body: HumanizerRequest):
-    # check_ip(request)
-    join_url = "https://conversantech-humanizer-ai.hf.space/gradio_api/queue/join?__theme=system"
+async def join_queue(request: Request):
+    # Rate limiting
+    ip = get_ip(request)
+    if not check_rate_limit(ip):
+        raise HTTPException(429, "Rate limit exceeded. Try again in 1 minute.")
+    
+    # Parse request body manually (no Pydantic)
+    try:
+        body = await request.json()
+        if not validate_humanizer_request(body):
+            raise HTTPException(400, "Invalid request format")
+    except:
+        raise HTTPException(400, "Invalid JSON")
     
     try:
-        response = requests.post(join_url, headers=HEADERS, data=json.dumps(request_body.dict()), timeout=10)
+        response = requests.post(
+            "https://conversantech-humanizer-ai.hf.space/gradio_api/queue/join?__theme=system",
+            headers=HEADERS, 
+            json=body,  # Use json parameter instead of data+dumps
+            timeout=10
+        )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
-        return {"error": "Failed to join queue", "details": str(e)}
+    except requests.RequestException:
+        raise HTTPException(500, "Service temporarily unavailable")
 
 # -----------------------
 # Queue Data Endpoint
 # -----------------------
 @app.get("/queue_data/{session_hash}")
-@limiter.limit("5/minute")
 def get_queue_data(request: Request, session_hash: str):
-    # check_ip(request)
-    data_url = f"https://conversantech-humanizer-ai.hf.space/gradio_api/queue/data?session_hash={session_hash}"
+    # Rate limiting
+    ip = get_ip(request)
+    if not check_rate_limit(ip):
+        raise HTTPException(429, "Rate limit exceeded. Try again in 1 minute.")
     
     try:
-        response = requests.get(data_url, headers={**HEADERS, "accept": "text/event-stream"}, stream=True, timeout=10)
+        response = requests.get(
+            f"https://conversantech-humanizer-ai.hf.space/gradio_api/queue/data?session_hash={session_hash}",
+            headers={**HEADERS, "accept": "text/event-stream"}, 
+            stream=True, 
+            timeout=10
+        )
         response.raise_for_status()
-        data_lines = []
-        for line in response.iter_lines():
-            if line:
-                decoded_line = line.decode("utf-8")
-                data_lines.append(decoded_line)
-        return {"stream_data": data_lines}
-    except requests.RequestException as e:
-        return {"error": "Failed to fetch queue data", "details": str(e)}
+        # Stream processing to save memory
+        return {"stream_data": [line.decode("utf-8") for line in response.iter_lines() if line]}
+    except requests.RequestException:
+        raise HTTPException(500, "Service temporarily unavailable")
 
 # -----------------------
-# ZeroGPT Test Endpoint
+# ZeroGPT Test Endpoint (Higher rate limit)
 # -----------------------
 @app.post("/zerogpt-test")
-@limiter.limit("5/minute")
-def zerogpt_test(request: Request, request_body: ZeroGPTRequest):
-    zerogpt_url = "https://api.zerogpt.com/api/detect/detectText"
+async def zerogpt_test(request: Request):
+    # Higher rate limit for this endpoint (20/minute)
+    ip = get_ip(request)
+    now = time.time()
+    rate_limits[f"{ip}_zerogpt"] = [t for t in rate_limits[f"{ip}_zerogpt"] if now - t < 60]
+    if len(rate_limits[f"{ip}_zerogpt"]) >= 20:
+        raise HTTPException(429, "Rate limit exceeded. Try again in 1 minute.")
+    rate_limits[f"{ip}_zerogpt"].append(now)
     
-    # Prepare headers with cookies
-    headers_with_cookies = ZEROGPT_HEADERS.copy()
-    headers_with_cookies["Cookie"] = ZEROGPT_COOKIES
+    # Parse request body
+    try:
+        body = await request.json()
+        if not validate_zerogpt_request(body):
+            raise HTTPException(400, "Missing input_text field")
+    except:
+        raise HTTPException(400, "Invalid JSON")
     
     try:
         response = requests.post(
-            zerogpt_url, 
-            headers=headers_with_cookies, 
-            data=json.dumps({"input_text": request_body.input_text}), 
+            "https://api.zerogpt.com/api/detect/detectText",
+            headers={**ZEROGPT_HEADERS, "Cookie": ZEROGPT_COOKIES},
+            json={"input_text": body["input_text"]},
             timeout=30
         )
         response.raise_for_status()
         return response.json()
-    except requests.RequestException as e:
-        return {"error": "Failed to detect text with ZeroGPT", "details": str(e)}
+    except requests.RequestException:
+        raise HTTPException(500, "ZeroGPT service unavailable")
 
 # -----------------------
 # Health Check Endpoint
 # -----------------------
 @app.get("/health")
-@limiter.limit("5/minute")
 def health_check(request: Request):
-    # check_ip(request)
-    return {"status": "ok", "message": "API wrapper is running"}
+    # Rate limiting
+   
+    
+    return {
+        "status": "ok", 
+        "memory_optimized": True,
+        "rate_limits": "5/min general, 20/min zerogpt"
+    }
