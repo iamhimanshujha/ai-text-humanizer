@@ -8,8 +8,12 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+# Minimal IP extraction function
+def get_ip(request: Request):
+    return request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
+
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_ip)
 app = FastAPI(title="Conversantech Humanizer AI API Wrapper")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -29,15 +33,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -----------------------
-# Allowed client IPs
-# -----------------------
-# ALLOWED_IPS = ["123.45.67.89", "111.222.333.444"]  # replace with your allowed IPs
-
-# def check_ip(request: Request):
-#     client_ip = request.client.host
-#     if client_ip not in ALLOWED_IPS:
-#         raise HTTPException(status_code=403, detail=f"Forbidden: Your IP ({client_ip}) is not allowed")
 
 # -----------------------
 # Request models

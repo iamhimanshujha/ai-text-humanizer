@@ -1,0 +1,220 @@
+
+
+Create a modern, highly responsive, professional Next.js website for an AI Text Humanizer service with the following specifications:
+
+## **Website Overview**
+Build a sleek, user-friendly web application that allows users to:
+1. **Humanize AI-generated text** to make it undetectable by AI detection tools
+2. **Test text for AI detection** to check if content appears human-written
+3. **Get detailed analytics** about text readability and AI detection scores
+## **API Integration Details**
+
+### **Base API URL**: `https://ai-text-humanizer-aptm.onrender.com/`
+
+### **Rate Limiting**: All endpoints are rate-limited to 5 requests per minute per IP (except zerogpt-test: 20/minute)
+
+---
+
+## **Available API Endpoints**
+
+### **1. Text Humanization Process (2-step process)**
+
+#### **Step 1: Join Queue**
+- **Endpoint**: `POST /join_queue`
+- **Purpose**: Initiate text humanization process
+- **Request Body**:
+```json
+{
+  "data": ["Your AI-generated text here"],
+  "event_data": null,
+  "fn_index": 0,
+  "trigger_id": 1,
+  "session_hash": "random_string_here"
+}
+```
+- **Response**:{
+  "event_id": "de59ef87928e40e09ae5a2ef5a55abea"
+}
+ Returns queue information and session details
+- **Logic**: This starts the humanization process and returns a session_hash for tracking
+
+#### **Step 2: Get Results**
+- **Endpoint**: `GET /queue_data/{session_hash}`
+- **Purpose**: Retrieve humanized text and analysis
+- **Logic**: Poll this endpoint with the session_hash from step 1
+- **Response Structure**:
+```json
+{
+  "stream_data": [
+    "data: {\"msg\":\"estimation\",\"event_id\":\"...\",\"rank\":0,\"queue_size\":1,\"rank_eta\":0.71}",
+    "data: {\"msg\":\"process_starts\",\"event_id\":\"...\",\"eta\":0.71}",
+    "data: {\"msg\":\"process_completed\",\"event_id\":\"...\",\"output\":{\"data\":[\"HUMANIZED_TEXT_HERE\",\"📊 Advanced Content Analysis:\\n\\n📖 Readability Metrics:\\n• Flesch Score: 80.3 (Easy)\\n• Grade Level: 4.8\\n• Sentences: 1\\n• Words: 13\\n\\n�🤖 AI Detection Bypass:\\n• Perplexity: 42.7 ✅ (Target: 40-80)\\n• Burstiness: 1.2 ✅ (Target: >0.5)\\n• Overall Status: ✅ EXCELLENT\\n\\n🎯 Detection Tool Results:\\n• ZeroGPT: 0% AI\\n• Quillbot: Human\\n• GPTZero: Undetectable\"],\"is_generating\":false,\"duration\":0.139,\"success\":true}}",
+    "data: {\"msg\":\"close_stream\",\"event_id\":null}"
+  ]
+}
+```
+
+### **2. AI Detection Test**
+- **Endpoint**: `POST /zerogpt-test`
+- **Purpose**: Check if text appears AI-generated
+- **Request Body**:
+```json
+{
+  "input_text": "Text to analyze for AI detection"
+}
+```
+- **Response Structure**:
+```json
+{
+  "success": true,
+  "code": 200,
+  "message": "detection result passed to proxy",
+  "data": {
+    "sentences": [],
+    "isHuman": 100,
+    "additional_feedback": "Please input more text for a more accurate result",
+    "textWords": 18,
+    "aiWords": 0,
+    "fakePercentage": 0.0,
+    "originalParagraph": "Your input text...",
+    "feedback": "Your Text is Human Written",
+    "input_text": "Your original input...",
+    "detected_language": "en"
+  }
+}
+```
+
+### **3. Health Check**
+- **Endpoint**: `GET /health`
+- **Purpose**: Check API status
+- **Response**: `{"status": "ok", "message": "API wrapper is running"}`
+
+---
+
+## **Website Requirements**
+
+### **Design & UI**
+- Modern, clean design with gradient backgrounds
+- Dark/light mode toggle
+- Responsive design for mobile and desktop
+- Loading states with professional spinners
+- Success/error notifications
+- Progress indicators for processing
+
+### **Main Features**
+
+#### **1. Text Humanizer Section**
+- Large textarea for input text (AI-generated content)
+- "Humanize Text" button
+- Real-time character/word counter
+- Loading state during processing
+- Results display with:
+  - Humanized text in a copyable textarea
+  - Detailed analytics dashboard showing:
+    - Flesch Score and readability grade
+    - Perplexity and Burstiness scores
+    - AI detection tool results (ZeroGPT, Quillbot, GPTZero)
+    - Overall status (EXCELLENT/GOOD/NEEDS IMPROVEMENT)
+
+#### **2. AI Detection Checker Section**
+- Textarea for text input
+- "Check AI Detection" button
+- Results display showing:
+  - Human percentage (isHuman score)
+  - AI percentage (fakePercentage)
+  - Word count analysis (textWords vs aiWords)
+  - Feedback message
+  - Detected language
+
+#### **3. Additional Features**
+- Compare before/after text side-by-side
+- Export results as PDF/text file
+- History of processed texts (local storage)
+- Pricing/usage information
+- FAQ section
+- Contact/support section
+
+### **Technical Implementation**
+
+#### **State Management**
+- Use React hooks (useState, useEffect) for local state
+- Implement proper loading states
+- Handle errors gracefully with user-friendly messages
+
+#### **API Integration Logic**
+```typescript
+// Humanization Process
+const humanizeText = async (inputText: string) => {
+  // Step 1: Join queue
+  const sessionHash = generateRandomHash();
+  const joinResponse = await fetch('/api/join_queue', {
+    method: 'POST',
+    body: JSON.stringify({
+      data: [inputText],
+      event_data: null,
+      fn_index: 0,
+      trigger_id: 1,
+      session_hash: sessionHash
+    })
+  });
+  
+  // Step 2: Poll for results
+  const pollResults = async () => {
+    const response = await fetch(`/api/queue_data/${sessionHash}`);
+    const data = await response.json();
+    
+    // Parse stream_data to extract humanized text and analysis
+    const processedData = parseStreamData(data.stream_data);
+    return processedData;
+  };
+  
+  // Implement polling with timeout
+  return await pollWithTimeout(pollResults, 30000);
+};
+
+// AI Detection
+const checkAIDetection = async (text: string) => {
+  const response = await fetch('/api/zerogpt-test', {
+    method: 'POST',
+    body: JSON.stringify({ input_text: text })
+  });
+  return await response.json();
+};
+```
+
+#### **Error Handling**
+- Rate limiting messages (show retry timer)
+- Network error handling
+- Timeout handling for long processes
+- Input validation (minimum text length, maximum text length)
+
+#### **UI Components Needed**
+- TextArea component with character counter
+- LoadingSpinner component
+- ResultsCard component for displaying analysis
+- ProgressBar component
+- CopyToClipboard button
+- ExportButton component
+- NotificationToast component
+
+### **Styling Requirements**
+- Use Tailwind CSS for styling
+- Professional color scheme (blues, whites, subtle gradients)
+- Smooth animations and transitions
+- Card-based layout for results
+- Proper spacing and typography
+- Icons for different sections (Lucide React icons)
+
+### **Content Structure**
+```
+Header: "AI Text Humanizer - Make Your Content Undetectable"
+Subheader: "Transform AI-generated text into human-like content that bypasses detection tools"
+
+Two main sections:
+1. "Humanize Your Text" (left side)
+2. "Check AI Detection" (right side)
+
+Footer with links, usage information, and API status
+```
+
+Make the website professional,highly responsive, intuitive to use, and visually appealing. Include proper error handling, loading states, and a seamless user experience. The website should clearly explain what each feature does and display results in an easy-to-understand format with visual indicators for scores and status.
